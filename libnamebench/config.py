@@ -208,7 +208,13 @@ def GetAutoUpdatingConfigFile(conf_file):
   url = '%s/%s' % (TRUNK_URL, conf_file)
   content = None
   try:
-    _, content = h.request(url, 'GET')
+    resp, content = h.request(url, 'GET')
+    
+    # Check for HTTP error status codes
+    if resp.status >= 400:
+      print '* HTTP Error %s when fetching %s: %s' % (resp.status, url, content)
+      return _ExpandConfigSections(local_config)
+      
     remote_config = ConfigParser.ConfigParser()
   except:
     print '* Unable to fetch remote %s: %s' % (conf_file, util.GetLastExceptionString())
@@ -273,4 +279,3 @@ def MergeConfigurationFileOptions(options):
   # This makes it easier to pass around later. Lazy-hack.
   options.version = version.VERSION
   return options
-
