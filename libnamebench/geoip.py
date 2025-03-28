@@ -37,8 +37,14 @@ def GetFromGoogleLocAPI():
   h = httplib2.Http(tempfile.gettempdir(), timeout=10)
   url = 'http://www.google.com/loc/json'
   post_data = {'request_address': 'true', 'version': '1.1.0', 'source': 'namebench'}
-  unused_resp, content = h.request(url, 'POST', simplejson.dumps(post_data))
   try:
+    resp, content = h.request(url, 'POST', simplejson.dumps(post_data))
+    
+    # Check for HTTP error status codes
+    if resp.status >= 400:
+      print '* HTTP Error %s when accessing %s: %s' % (resp.status, url, content)
+      return {}
+      
     data = simplejson.loads(content)['location']
     return {
         'region_name': data['address'].get('region'),
@@ -56,13 +62,23 @@ def GetFromGoogleLocAPI():
 
 def GetFromMaxmindJSAPI():
   h = httplib2.Http(tempfile.gettempdir(), timeout=10)
-  unused_resp, content = h.request('http://j.maxmind.com/app/geoip.js', 'GET')
-  keep = ['region_name', 'country_name', 'city', 'latitude', 'longitude', 'country_code']
-  results = dict([x for x in re.findall("geoip_(.*?)\(.*?\'(.*?)\'", content) if x[0] in keep])
-  results.update({'source': 'mmind'})
-  if results:
-    return results
-  else:
+  try:
+    resp, content = h.request('http://j.maxmind.com/app/geoip.js', 'GET')
+    
+    # Check for HTTP error status codes
+    if resp.status >= 400:
+      print '* HTTP Error %s when accessing Maxmind API: %s' % (resp.status, content)
+      return {}
+      
+    keep = ['region_name', 'country_name', 'city', 'latitude', 'longitude', 'country_code']
+    results = dict([x for x in re.findall("geoip_(.*?)\(.*?\'(.*?)\'", content) if x[0] in keep])
+    results.update({'source': 'mmind'})
+    if results:
+      return results
+    else:
+      return {}
+  except:
+    print '* Failed to use MaxmindJSAPI: %s' % util.GetLastExceptionString()
     return {}
 
 

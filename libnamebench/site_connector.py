@@ -53,7 +53,13 @@ class SiteConnector(object):
     h = httplib2.Http(tempfile.gettempdir(), timeout=10)
     content = None
     try:
-      unused_resp, content = h.request(url, 'GET')
+      resp, content = h.request(url, 'GET')
+      
+      # Check for HTTP error status codes
+      if resp.status >= 400:
+        self.msg('HTTP Error %s when fetching %s: %s' % (resp.status, url, content))
+        return []
+        
       hosts = []
       for record_type, host in simplejson.loads(content):
         hosts.append((str(record_type), str(host)))
@@ -84,6 +90,12 @@ class SiteConnector(object):
     }
     try:
       resp, content = h.request(url, 'POST', urllib.urlencode(post_data))
+      
+      # Check for HTTP error status codes
+      if resp.status >= 400:
+        self.msg('HTTP Error %s: %s' % (resp.status, content))
+        return (False, 'error')
+        
       try:
         data = simplejson.loads(content)
         for note in data['notes']:

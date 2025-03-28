@@ -50,6 +50,16 @@ def FetchUrl(url, attempts=0):
   h = httplib2.Http(CACHE_DIR, timeout=10)
   try:
     resp, content = h.request(url, 'GET', headers={'cache_control': 'max-age=%s' % CACHE_EXPIRATION})
+    
+    # Check for HTTP error status codes
+    if resp.status >= 400:
+      print >> sys.stderr, "HTTP Error %s when fetching %s: %s" % (resp.status, url, content)
+      if attempts < MAX_ATTEMPTS:
+        print >> sys.stderr, "Will try again..."
+        time.sleep(SLEEPY_TIME)
+        return FetchUrl(url, attempts=attempts)
+      else:
+        return None
   except:
     if attempts < MAX_ATTEMPTS:
       print >> sys.stderr, "Will try again..."
