@@ -107,6 +107,15 @@ class WorkerThread(threading.Thread, base_ui.BaseUI):
     self.master = master
     self.options = options
     self.resource_dir = os.path.dirname(os.path.dirname(__file__))
+    self.stop_flag = False
+    self.daemon = True  # Make thread a daemon so it exits when main thread exits
+
+  def stop(self):
+    """Stop the benchmark thread."""
+    self.stop_flag = True
+    if hasattr(self, 'bmark') and self.bmark:
+      self.bmark.stop()
+    self.msg('Stopping benchmark...', enable_button=True)
 
   def msg(self, message, **kwargs):
     """Add messages to the main queue."""
@@ -115,9 +124,20 @@ class WorkerThread(threading.Thread, base_ui.BaseUI):
   def run(self):
     self.msg('Started thread', enable_button=False)
     try:
+      if self.stop_flag:
+        return
       self.PrepareTestRecords()
+      
+      if self.stop_flag:
+        return
       self.PrepareNameServers()
+      
+      if self.stop_flag:
+        return
       self.PrepareBenchmark()
+      
+      if self.stop_flag:
+        return
       self.RunAndOpenReports()
     except nameserver_list.OutgoingUdpInterception:
       (exc_type, exception, tb) = sys.exc_info()
@@ -280,7 +300,22 @@ class MainWindow(Frame, base_ui.BaseUI):
     source_titles = self.data_src.ListSourceTitles()
     left_dropdown_width = max([len(x) for x in source_titles]) - 3
 
-    location_choices = [self.country, '(Other)']
+    # Add default locations if self.country is not set or is None
+    if hasattr(self, 'country') and self.country:
+      location_choices = [self.country, '(Other)']
+    else:
+      # Provide common country options as fallback
+      location_choices = ['United States', 'United Kingdom', 'Canada', 'Australia', 'Germany', 'France', 'China', 'Japan', 'Brazil', 'India', '(Other)']
+      # Try to set country from geodata if available
+      if hasattr(self, 'geodata') and self.geodata and 'country_name' in self.geodata:
+        if self.geodata['country_name'] in location_choices:
+          self.country = self.geodata['country_name']
+        else:
+          location_choices.insert(0, self.geodata['country_name'])
+          self.country = self.geodata['country_name']
+      else:
+        self.country = location_choices[0]
+    
     location = OptionMenu(inner_frame, self.location, *location_choices)
     location.configure(width=left_dropdown_width)
     location.grid(row=11, column=0, sticky=W)
@@ -311,8 +346,16 @@ class MainWindow(Frame, base_ui.BaseUI):
     query_count.configure(width=right_dropdown_width + 6)
     self.query_count.set(self.options.query_count)
 
-    self.button = Button(outer_frame, command=self.StartJob)
-    self.button.grid(row=15, sticky=E, column=1, pady=4, padx=1)
+    # Add a frame for buttons
+    button_frame = Frame(outer_frame)
+    button_frame.grid(row=15, sticky=E, column=1, pady=4, padx=1)
+    
+    self.stop_button = Button(button_frame, text='Stop', command=self.StopJob)
+    self.stop_button.grid(row=0, column=0, padx=5)
+    self.stop_button.config(state=DISABLED)
+    
+    self.button = Button(button_frame, text='Start Benchmark', command=self.StartJob)
+    self.button.grid(row=0, column=1)
     self.UpdateRunState(running=True)
     self.UpdateRunState(running=False)
     self.UpdateStatus('namebench %s is ready!' % self.version)
@@ -347,6 +390,7 @@ class MainWindow(Frame, base_ui.BaseUI):
       try:
         self.button.config(state=DISABLED)
         self.button.config(text='Running')
+        self.stop_button.config(state=NORMAL)
       except TclError:
         THREAD_UNSAFE_TK = True
         self.UpdateStatus('Unable to disable button due to broken Tk library')
@@ -355,17 +399,25 @@ class MainWindow(Frame, base_ui.BaseUI):
       try:
         self.button.config(state=NORMAL)
         self.button.config(text='Start Benchmark')
+        self.stop_button.config(state=DISABLED)
       except TclError:
         pass
+
+  def StopJob(self):
+    """Stop the benchmark thread."""
+    if hasattr(self, 'worker_thread') and self.worker_thread:
+      self.worker_thread.stop()
+      self.UpdateStatus('Benchmark stopped.')
+      self.UpdateRunState(running=False)
 
   def StartJob(self):
     """Events that get called when the Start button is pressed."""
 
     self.ProcessForm()
-    thread = WorkerThread(self.supplied_ns, self.global_ns, self.regional_ns, self.options,
+    self.worker_thread = WorkerThread(self.supplied_ns, self.global_ns, self.regional_ns, self.options,
                           data_source=self.data_src,
                           master=self.master, backup_notifier=self.MessageHandler)
-    thread.start()
+    self.worker_thread.start()
 
   def ProcessForm(self):
     """Read form and populate instance variables."""

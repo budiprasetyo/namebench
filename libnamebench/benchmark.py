@@ -68,10 +68,15 @@ class Benchmark(object):
     self.nameservers = nameservers
     self.results = {}
     self.status_callback = status_callback
+    self.stop_flag = False  # Add stop flag
 
   def msg(self, msg, **kwargs):
     if self.status_callback:
       self.status_callback(msg, **kwargs)
+      
+  def stop(self):
+    """Stop the benchmark process."""
+    self.stop_flag = True
 
   def _CheckForIndexHostsInResults(self, test_records):
     """Check if we have already tested index hosts.
@@ -118,7 +123,10 @@ class Benchmark(object):
     for ns in self.nameservers.enabled_servers:
       ns.ResetErrorCounts()
 
-    for _ in range(self.run_count):
+    for i in range(self.run_count):
+      if self.stop_flag:
+        self.msg('Benchmark stopped.')
+        break
       run_results = self._SingleTestRun(test_records)
       for ns in run_results:
         self.results.setdefault(ns, []).append(run_results[ns])
@@ -148,13 +156,18 @@ class Benchmark(object):
 
     # Feed the pre-computed records into the input queue.
     for i in range(len(test_records)):
+      if self.stop_flag:
+        break
       for ns in self.nameservers.enabled_servers:
         (request_type, hostname) = shuffled_records[ns.ip][i]
         input_queue.put((ns, request_type, hostname))
 
+    if self.stop_flag:
+      return results
+
     results_queue = self._LaunchBenchmarkThreads(input_queue)
     errors = []
-    while results_queue.qsize():
+    while results_queue.qsize() and not self.stop_flag:
       (ns, request_type, hostname, response, duration, error_msg) = results_queue.get()
       if error_msg:
         duration = ns.timeout * 1000
@@ -178,12 +191,11 @@ class Benchmark(object):
     query_count = expected_total / len(self.nameservers.enabled_servers)
     status_message = ('Sending %s queries to %s servers' %
                       (query_count, len(self.nameservers.enabled_servers)))
-    while results_queue.qsize() != expected_total:
+    while results_queue.qsize() != expected_total and not self.stop_flag:
       self.msg(status_message, count=results_queue.qsize(), total=expected_total)
       time.sleep(0.5)
 
     self.msg(status_message, count=results_queue.qsize(), total=expected_total)
     for thread in threads:
-      thread.join()
+      thread.join(0.1)  # Join with timeout to avoid blocking
     return results_queue
-
