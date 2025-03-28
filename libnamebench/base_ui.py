@@ -191,6 +191,10 @@ class BaseUI(object):
 
   def RunBenchmark(self):
     """Run the benchmark."""
+    if hasattr(self.bmark, 'stop_flag') and self.bmark.stop_flag:
+      self.UpdateStatus("Benchmark stopped.")
+      return
+      
     results = self.bmark.Run(self.test_records)
     self.UpdateStatus("Benchmark finished.")
     index = []
@@ -221,6 +225,11 @@ class BaseUI(object):
   def RunAndOpenReports(self):
     """Run the benchmark and open up the report on completion."""
     self.RunBenchmark()
+    
+    # If benchmark was stopped, don't try to generate reports
+    if hasattr(self.bmark, 'stop_flag') and self.bmark.stop_flag:
+      return
+      
     best = self.reporter.BestOverallNameServer()
     self.CreateReports()
     if self.options.template == 'html':
@@ -278,4 +287,3 @@ class BaseUI(object):
     self.UpdateStatus('Opening %s' % self.report_path)
     better_webbrowser.output = self.DebugMsg
     better_webbrowser.open(self.report_path)
-
